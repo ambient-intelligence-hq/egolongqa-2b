@@ -68,6 +68,8 @@ def main():
         if not man.exists():
             continue
         paths = json.load(open(man))[:a.num_frames]
+        paths = [q if Path(q).exists()
+                 else str(Path(a.frames) / rec["video_id"] / Path(q).name) for q in paths]
         q = ("Provide the detailed video description and answer to the question now: "
              f"Question:{rec['question']} {rec['mcq_options']}")
         msgs = [{"role": "system", "content": [{"type": "text", "text": SYS}]},

@@ -46,9 +46,13 @@ ffmpeg -hide_banner -loglevel error -y -i VIDEO \
   -q:v 3  frames/%03d.jpg      # then take the first 100
 ```
 
-The trainer and evaluator both read `frames.json` verbatim and take the first N — **the manifest is
-the contract.** If your manifest lists more frames than the teacher actually saw, the student learns
-to describe footage it was never shown.
+The trainer and evaluator both read `frames.json` and take the first N — **the manifest is the
+contract.** If it lists more frames than the teacher actually saw, the student learns to describe
+footage it was never shown.
+
+Paths inside `frames.json` may be relative to whatever tree wrote them. Both scripts re-root any
+path that does not resolve onto `--frames/<video_id>/<file>`, so a manifest copied between machines
+still works; the order is always preserved.
 
 ---
 
@@ -114,11 +118,17 @@ Expected: vocab 248,320 → 143,469, **1.9985 B**, `model.safetensors` md5
 ### 4. Evaluate — always on both metrics
 
 ```bash
+# skewed (benchmark option order)
 python src/evaluate.py --model work/pruned --data data/eval70.jsonl \
   --frames data/frames --num-frames 100 --max-pixels 331776 --max-new-tokens 8192
 
-python src/evaluate.py --model work/pruned --data data/eval70_shuf.jsonl ...   # debiased twin
+# debiased twin -- same videos and questions, options permuted to uniform gold
+python src/evaluate.py --model work/pruned --data data/eval70_shuf.jsonl \
+  --frames data/frames --num-frames 100 --max-pixels 331776 --max-new-tokens 8192
 ```
+
+`--model` takes a base, merged or pruned checkpoint (it also honours `$STUDENT_MODEL`).
+Add `--adapter runs/armB/checkpoint-367` to evaluate an unmerged adapter instead.
 
 **`--max-new-tokens 8192` is not optional.** The default of 768 truncates 3–9 % of completions
 mid-description so they never emit an answer and score wrong regardless of what the model would have
@@ -136,6 +146,25 @@ Expected on 70 held-out videos: **65.7 % skewed / 74.3 % debiased**.
 starter kit. See the comments in both — every one marks a bug that cost real time.
 
 ---
+
+## Verified
+
+Run end-to-end on one 80 GB GPU against the shipped weights:
+
+| step | result |
+|---|---|
+| `shuffle_options.py` | 605 rows, gold flattened to 25.1 % max (from 63 % C) |
+| `train_lora.py` | reaches training steps, saves an adapter |
+| `merge_lora.py` | 2,213,241,664 params (2.2132 B) — the documented pre-prune count |
+| `prune_vocab.py` | 143,469 rows, **1.9985 B**; 256/256 byte tokens resolved, 0 substitutions |
+| **weights reproduce the submission** | `model.safetensors` md5 `69337fedd6ce…` — **bit-for-bit identical**, as are `config.json` and `vocab_remap.json` |
+| `verify.py` | all 6 gates: coverage 0 out-of-range · fallback 0 mismatches · unicode fuzz clean · argmax safety 0/5 · logit ≤6.25e-02 on kept rows · **generation identical 5/5** |
+| `count_params.py` | 1.9985 B, vocab 143,469 |
+| `evaluate.py` on the pruned checkpoint | runs, remap active, 6/6 parsed |
+
+The full merge → prune cycle regenerates the submitted checkpoint **exactly**, from the adapter and
+the keep-set in this repo. That is the strongest reproduction claim available without redistributing
+the 4 GB weights.
 
 ## Things that will bite you
 

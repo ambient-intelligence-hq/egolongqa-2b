@@ -205,6 +205,13 @@ def load_rows(data_path, frames_dir, num_frames):
             missing += 1
             continue
         paths = json.load(open(man))[:num_frames]
+        # frames.json may store paths relative to the tree it was written in. Re-root any
+        # that do not resolve onto frames_dir/<video_id>/<file> so a manifest copied between
+        # machines still works. ORDER is preserved -- the manifest is the contract, and the
+        # trainer takes the first N verbatim.
+        paths = [q if Path(q).exists()
+                 else str(Path(frames_dir) / r["video_id"] / Path(q).name)
+                 for q in paths]
         if len(paths) < num_frames * 0.5:
             missing += 1
             continue

@@ -58,6 +58,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/eval70.jsonl")
     ap.add_argument("--frames", default="data/frames")
+    ap.add_argument("--model", default=MODEL,
+                    help="base or merged/pruned checkpoint. Overrides $STUDENT_MODEL. "
+                         "Point this at a pruned dir to evaluate the shipped weights.")
     ap.add_argument("--adapter", default="", help="LoRA adapter dir; empty = base model control")
     ap.add_argument("--num-frames", type=int, default=100)
     ap.add_argument("--max-pixels", type=int, default=50176)
@@ -84,9 +87,10 @@ def main():
                     help="on a vote tie: 'first' = highest-ranked sample, 'C' = majority class")
     a = ap.parse_args()
 
-    processor = AutoProcessor.from_pretrained(MODEL)
+    model_path = a.model       # CLI wins over $STUDENT_MODEL
+    processor = AutoProcessor.from_pretrained(model_path)
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL, dtype=(torch.float32 if a.fp32 else torch.bfloat16),
+        model_path, dtype=(torch.float32 if a.fp32 else torch.bfloat16),
         # --fp32 removes bf16 rounding from the comparison. Local and H100 produce identical
         # inputs and identical weights, yet answers differ on 10/70 with an 8-1 asymmetry
         # favouring local — too lopsided for symmetric rounding noise. If fp32 makes the two
@@ -106,7 +110,7 @@ def main():
     # model generates in pruned space, so generated ids must be mapped back before decoding.
     # No vocab_remap.json => every line below is skipped and behaviour is byte-identical to before.
     RM = None
-    _rmp = Path(MODEL) / "vocab_remap.json"
+    _rmp = Path(model_path) / "vocab_remap.json"
     if _rmp.exists():
         _r = json.load(open(_rmp))
         _extras = [int(x) for x in _r.get("extras", [])]
@@ -163,6 +167,12 @@ def main():
         if not man.exists():
             continue
         paths = json.load(open(man))[:a.num_frames]
+        # frames.json may store paths relative to whatever tree it was written in.
+        # Re-root any that do not resolve onto --frames/<video_id>/<file>, so a manifest
+        # copied between machines still works. The ORDER is preserved: it is the contract.
+        paths = [p if Path(p).exists()
+                 else str(Path(a.frames) / r["video_id"] / Path(p).name)
+                 for p in paths]
         query = ("Provide the detailed video description and answer to the question now: "
                  f"Question:{r['question']} {r['mcq_options']}")
         msgs = [{"role": "system", "content": [{"type": "text", "text": JUNIOR_SYSTEM}]},
@@ -245,7 +255,7 @@ def main():
         if n % 10 == 0:
             print(f"  {n}/{len(recs)} running acc={ok}/{n}={100*ok/n:.1f}%", flush=True)
     print(f"\n=== {tag}  max_pixels={a.max_pixels}  frames={a.num_frames} "
-          f"model={MODEL} thinking={a.thinking} maxnew={a.max_new_tokens} ===")
+          f"model={model_path} thinking={a.thinking} maxnew={a.max_new_tokens} ===")
     print(f"accuracy: {ok}/{n} = {100*ok/max(1,n):.1f}%   (parsed {parsed}/{n})"
           + (f"   [truncation-fallback recovered {n_fallback}]" if a.answer_fallback else ""))
     if a.out:

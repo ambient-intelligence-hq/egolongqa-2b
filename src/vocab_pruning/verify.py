@@ -109,6 +109,10 @@ def main():
 
     def build(rec):
         paths = json.load(open(Path(a.frames) / rec["video_id"] / "frames.json"))[:a.num_frames]
+        # re-root manifest paths that do not resolve (see README: the manifest is the contract,
+        # but the tree it was written in may differ from the one you are running in)
+        paths = [q if Path(q).exists()
+                 else str(Path(a.frames) / rec["video_id"] / Path(q).name) for q in paths]
         q = ("Provide the detailed video description and answer to the question now: "
              f"Question:{rec['question']} {rec['mcq_options']}")
         msgs = [{"role": "system", "content": [{"type": "text", "text": SYS}]},
