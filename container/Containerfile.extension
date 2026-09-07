@@ -1,0 +1,77 @@
+# ===================================================================
+# SMALL-TRACK (<=2B) EXTENSION BLOCK — vocab-pruned Qwen3.5-2B junior, arm B ckpt-367
+# Paste into the marked extension block at the BOTTOM of the starter-kit Containerfile.
+# Do NOT edit above the block.
+#
+# Model: merged arm B checkpoint-367, vocabulary pruned 248,320 -> 143,469 rows.
+#   1,998,506,816 params = 1.9985 B  -> UNDER the 2B line by 1.49 M, counting the FULL
+#   multimodal checkpoint (vision tower 331 M + LM), i.e. the strict reading of the limit.
+#   Pruning verified prediction-identical to the unpruned model: 70/70 <choice> letters and
+#   68/70 byte-identical completions, on this exact container stack.
+#
+# Two images are built from this file, differing ONLY in JUNIOR_THINKING (see below).
+# ===================================================================
+
+USER root
+
+# --- 0. ffmpeg: the base's own 4.4.2, DELIBERATELY -------------------
+# We tried baking in a 6.1.2 static build, because our reference frames came from Ubuntu's 6.1.1 and
+# 4.4.2's ffprobe reports slightly different durations (618.134000 vs 618.133333), which shifts
+# eff_fps = min(2, N/duration) and swaps ~4/100 frames on affected videos. The reasoning was sound;
+# the measurement did not support it:
+#
+#   build            nothink agree / acc      think agree / acc
+#   4.4.2 (this)     68/70  51/70             70/70  53/70 = 75.7%   <- reproduces our number EXACTLY
+#   6.1.2 static     65/70  51/70             65/70  51/70 = 72.9%
+#
+# 4.4.2 is better-or-equal on every metric and is the only build that reproduces the reported number
+# per-sample. The gap is 2 items at n=70 — inside the ±3-item frame jitter — so this is "no evidence
+# 6.1.2 helps", not "4.4.2 is provably better"; the tie-break is the verified exact reproduction.
+# NOTE: this is unrelated to the fps/midpoint fix in extract_frames (see model_appendix.py), which
+# corrects a ~3 s sampling offset and IS required. Do not confuse the two.
+# Nothing to install here — the base image already provides ffmpeg/ffprobe 4.4.2.
+
+# --- 1. bake the pruned weights ------------------------------------
+# ~4 GB, so a single COPY layer is fine (the 27B image had to split shards to stop the
+# push restarting; that does not apply at this size).
+# vocab_remap.json ships ALONGSIDE the weights and is required: the tokenizer is deliberately
+# NOT pruned, so it still emits ids in the original 248K space and model.py remaps them before
+# the embedding lookup. Without this file the appendix runs the UNPRUNED path against a 143K-row
+# embedding -> CUDA device-side assert -> dead worker -> the whole shard scores empty.
+COPY models/junior2b_pruned/ /models/junior2b/
+
+# --- 2. our model.py (starter base + appendix already concatenated) -
+# assembled at build time: cat build_context/model.py model_appendix.py > model.py
+COPY model.py /app/model.py
+
+# --- 3. runtime configuration --------------------------------------
+ENV JUNIOR_MODEL_DIR=/models/junior2b
+
+# max_pixels MUST be 331776. Every number we report (75.7% thinking / 71.4% non-thinking on
+# eval70_shuf) was measured at 331776; the eval harness's own default is 50176, and a keep-set or
+# a score taken at that resolution does not describe this image.
+ENV JUNIOR_MAX_PIXELS=331776
+
+# 8192, NOT the appendix default of 2048. The runner passes max_new_tokens=16 and the appendix
+# raises it to this floor. Our reported numbers used 8192, and the token cap is not a free
+# parameter here: at 768 the cap silently truncated 6/70 arm B completions mid-description so they
+# never emitted <answer>, which cost 1.4pp (74.3 -> 75.7) purely as a measurement artefact.
+# 2048 would reintroduce a smaller version of that bug.
+ENV JUNIOR_MAX_NEW_TOKENS=8192
+
+# Thinking mode — THE ONLY DIFFERENCE BETWEEN THE TWO IMAGES.
+#   JUNIOR_THINKING=1 -> 75.7% (53/70) on eval70_shuf, pinned stack, parsed 70/70
+#   JUNIOR_THINKING=0 -> 71.4% (50/70) on the same stack, parsed 69/70
+# 3 items at n=70 is not a significant gap, and the OOD evidence points the other way
+# (QAEgo4D: thinking gave 22 parse failures vs 2), so both are built and the choice is deferred
+# rather than guessed. Overridden per-build with --build-arg.
+ARG JUNIOR_THINKING=0
+ENV JUNIOR_THINKING=${JUNIOR_THINKING}
+
+# torch -> dill (via depyf) calls tempfile.gettempdir() at import; under the validator's
+# --read-only rootfs only /dev/shm is writable, so point temp there.
+ENV TMPDIR=/dev/shm
+
+# select at eval time with: --model-type qwen   (junior27b / llama4 also route here)
+# NO ENTRYPOINT (the runtime invokes run_evaluation.py directly).
+# ===================================================================

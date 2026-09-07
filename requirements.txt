@@ -1,0 +1,14 @@
+# Versions this entry was trained, pruned and evaluated on. The M-RoPE patch in
+# src/mrope_fix.py hooks transformers internals (Qwen3.5's get_rope_index), so a
+# minor bump can break it loudly -- or, worse, silently change the chat template.
+torch==2.11.0
+transformers==5.13.1
+peft==0.19.1
+datasets==5.0.0
+accelerate==1.14.0
+pillow>=10.0
+safetensors>=0.4
+
+# optional: flash-attn needs a compiler and matching CUDA. Without it pass
+# --attn sdpa; results are unchanged, generation is slower.
+# flash-attn==2.8.3

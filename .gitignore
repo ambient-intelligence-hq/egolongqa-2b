@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+# inputs and outputs -- see README for how to obtain / regenerate
+data/
+runs/
+work/
+reports/
+*.log
