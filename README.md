@@ -1,4 +1,4 @@
-# EgoLongQA ≤2B — winning entry
+# Distilling Long-Video perception into a Sub-2B Model, EgoLongQA ≤2B — winning entry
 
 First place, **≤2B division**, EgoLongQA track of the AI Wearables Challenge 2026
 ([leaderboard](https://huggingface.co/spaces/facebook/wearable-ai-leaderboard)) — **0.8279**
@@ -35,8 +35,8 @@ One 80 GB GPU is enough for every step. Training the adapter takes ~4 h; the res
 | Traces | teacher outputs in the junior format (`data/train_junior.jsonl`) |
 
 Our traces and evaluation splits are published at
-`infinitylogesh/egolongqa-synth-annotations` and `infinitylogesh/egolongqa-junior-distill`
-(private; request access). `src/build_distill_dataset.py` regenerates them from raw agentic runs.
+`ambient-intelligence-labs/egolongqa-synth-annotations` and `ambient-intelligence-labs/egolongqa-junior-distill`
+. `src/build_distill_dataset.py` regenerates them from raw agentic runs.
 
 **Frame extraction is part of the contract, not a preprocessing detail.** Use exactly:
 
@@ -130,80 +130,18 @@ python src/evaluate.py --model work/pruned --data data/eval70_shuf.jsonl \
 `--model` takes a base, merged or pruned checkpoint (it also honours `$STUDENT_MODEL`).
 Add `--adapter runs/armB/checkpoint-367` to evaluate an unmerged adapter instead.
 
-**`--max-new-tokens 8192` is not optional.** The default of 768 truncates 3–9 % of completions
-mid-description so they never emit an answer and score wrong regardless of what the model would have
-concluded. Every number we produced before fixing this was wrong by about one question.
-
 Expected on 70 held-out videos: **65.7 % skewed / 74.3 % debiased**.
 
 > Report both. `eval70` inherits the 63 % C-skew and *cannot distinguish* a model that perceives from
 > one that has absorbed the prior. `eval70_shuf` is the same videos and questions with options
 > permuted to uniform gold.
 
-### 5. Build the container
-
-`container/Containerfile.extension` and `container/model_appendix.py` go into the organisers'
-starter kit. See the comments in both — every one marks a bug that cost real time.
-
 ---
-
-## Verified
-
-Run end-to-end on one 80 GB GPU against the shipped weights:
-
-| step | result |
-|---|---|
-| `shuffle_options.py` | 605 rows, gold flattened to 25.1 % max (from 63 % C) |
-| `train_lora.py` | reaches training steps, saves an adapter |
-| `merge_lora.py` | 2,213,241,664 params (2.2132 B) — the documented pre-prune count |
-| `prune_vocab.py` | 143,469 rows, **1.9985 B**; 256/256 byte tokens resolved, 0 substitutions |
-| **weights reproduce the submission** | `model.safetensors` md5 `69337fedd6ce…` — **bit-for-bit identical**, as are `config.json` and `vocab_remap.json` |
-| `verify.py` | all 6 gates: coverage 0 out-of-range · fallback 0 mismatches · unicode fuzz clean · argmax safety 0/5 · logit ≤6.25e-02 on kept rows · **generation identical 5/5** |
-| `count_params.py` | 1.9985 B, vocab 143,469 |
-| `evaluate.py` on the pruned checkpoint | runs, remap active, 6/6 parsed |
-
-The full merge → prune cycle regenerates the submitted checkpoint **exactly**, from the adapter and
-the keep-set in this repo. That is the strongest reproduction claim available without redistributing
-the 4 GB weights.
-
-## Things that will bite you
-
-- **Do consistency checks at build time, never at model load.** An `assert` in `__init__` kills the
-  worker and scores the *entire shard* empty. Asserts are also stripped under `python -O`.
-- **The starter kit's frame sampler is not this one.** It decodes with cv2 at interval *starts*;
-  ffmpeg's `fps` filter lands on *midpoints*. That is a ~3 s offset on every frame, on a benchmark
-  about *when* things happen. `container/model_appendix.py` overrides it.
-- **Keep ffmpeg 4.4.2** (the base image default). A 6.1.2 static build scored worse on both modes
-  (65/70 vs 68/70 and 70/70). Do not "upgrade" it.
-- **Verify per-sample, not on aggregate.** All four container bugs we hit preserved total accuracy
-  while changing individual answers. The acceptance gate is per-sample agreement plus an explained
-  diff list.
-- **A container run returning `{'C': 70}`** is not a 25.7 % score — it means every generation failed
-  into the fallback, usually because another job shared the GPU. Check the letter distribution.
-- **~3–5 items at n=70 sit on the decision boundary.** A 0.02 MAE input change (invisible) flipped 3
-  answers. Quote ±3 items of frame jitter alongside any container number.
-
-## Layout
-
-```
-src/train_lora.py            LoRA SFT on teacher traces
-src/evaluate.py              greedy eval, skewed and debiased
-src/shuffle_options.py       option permutation + gold relabelling
-src/merge_lora.py            adapter -> full checkpoint
-src/build_distill_dataset.py agentic run logs -> training rows
-src/mrope_fix.py             Qwen3.5 M-RoPE fix for truncated leading images
-src/answer_fallback.py       second turn when thinking exhausts the budget
-src/vocab_pruning/           profile -> build keep-set -> prune -> verify
-container/                   model appendix + Containerfile extension
-prompts/junior_system.txt    the system prompt (md5-guarded, 2000 bytes)
-```
-
 ## Citation
 
 ```bibtex
 @misc{ambient2026egolongqa,
-  title  = {Ambient @ EgoLongQA 2026: Distilling Perception, Not Orchestration,
-            into a Sub-2B Model},
+  title  = {Ambient @ EgoLongQA 2026: Distilling Long-Video perception into a Sub-2B Model},
   author = {Umapathi, Logesh Kumar},
   year   = {2026},
   note   = {AI Wearables Challenge 2026, EgoLongQA {$\leq$}2B division --- 1st place}
