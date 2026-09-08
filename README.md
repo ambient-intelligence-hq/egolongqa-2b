@@ -1,6 +1,6 @@
 # Distilling Long-Video perception into a Sub-2B Model, EgoLongQA ≤2B — winning entry
 
-First place, **≤2B division**, EgoLongQA track of the AI Wearables Challenge 2026
+🏆 First place, **≤2B division**, EgoLongQA - Meta Wearable AI Grand Challenge (ECCV 2026)
 ([leaderboard](https://huggingface.co/spaces/facebook/wearable-ai-leaderboard)) — **0.8279**
 on the held-out test set, at **1.9985 B** parameters.
 
