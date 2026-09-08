@@ -142,6 +142,10 @@ Expected on 70 held-out videos: **65.7 % skewed / 74.3 % debiased**.
 > one that has absorbed the prior. `eval70_shuf` is the same videos and questions with options
 > permuted to uniform gold.
 
+## Acknowledgments
+
+We thank the organizers of the [Wearable AI Workshop @ ECCV 2026](https://wearable-ai-workshop.github.io/) for the benchmark, the dataset, and the evaluation infrastructure , and for their responsiveness throughout the challenge.
+
 ---
 ## Citation
 
